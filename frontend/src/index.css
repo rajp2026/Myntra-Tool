@@ -1,0 +1,196 @@
+:root {
+  --bg-deep: #0a0f1e;
+  --bg-primary: #0f1729;
+  --bg-secondary: #1a2332;
+  --text-primary: #f0f2f5;
+  --text-secondary: #8892a4;
+  --accent-coral: #ff6b6b;
+  --accent-teal: #4ecdc4;
+  --warning: #ffd166;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-deep);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* App Container */
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+/* Header */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  background: linear-gradient(135deg, var(--accent-coral), var(--accent-teal));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Upload Section */
+.upload-zone {
+  border: 2px dashed var(--accent-teal);
+  border-radius: 12px;
+  padding: 3rem 2rem;
+  text-align: center;
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 2rem;
+}
+
+.upload-zone:hover {
+  background: rgba(78, 205, 196, 0.05);
+}
+
+.upload-btn {
+  background: linear-gradient(135deg, var(--accent-coral), #ff8e53);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 1rem;
+  font-size: 1rem;
+  transition: transform 0.2s;
+}
+
+.upload-btn:hover {
+  transform: translateY(-2px);
+}
+
+.upload-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Cards */
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: transform 0.3s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+}
+
+.card-images {
+  display: flex;
+  height: 200px;
+  background: #000;
+}
+
+.card-images img {
+  flex: 1;
+  width: 50%;
+  object-fit: cover;
+}
+
+.card-body {
+  padding: 1.25rem;
+}
+
+.brand {
+  color: var(--accent-teal);
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.category {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.rating {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--warning);
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.price {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.price-current {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.price-mrp {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Summary */
+.summary {
+  display: flex;
+  gap: 2rem;
+  background: var(--bg-primary);
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+}
+
+.summary-item {
+  text-align: center;
+}
+
+.summary-val {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--accent-teal);
+}
+
+.summary-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
