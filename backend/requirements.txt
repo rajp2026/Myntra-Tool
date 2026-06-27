@@ -2,8 +2,6 @@ fastapi
 uvicorn
 python-multipart
 pandas
-selenium
-webdriver-manager
 beautifulsoup4
 lxml
 pydantic
