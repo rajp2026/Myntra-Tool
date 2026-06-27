@@ -1,7 +1,7 @@
 """
 Myntra Product Scraper
 ======================
-Fetches product pages and category pages via HTTP, extracts the
+Fetches product pages and category pages via HTTP asynchronously, extracts the
 embedded ``window.__myx`` JSON payload — no browser required.
 
 Features:
@@ -14,7 +14,8 @@ import json
 import time
 import random
 import re
-import requests
+import asyncio
+import httpx
 from typing import Optional
 
 
@@ -22,10 +23,9 @@ from typing import Optional
 # Session helpers
 # ──────────────────────────────────────────────
 
-def _create_session() -> requests.Session:
-    """Return a ``requests.Session`` with browser-like headers."""
-    session = requests.Session()
-    session.headers.update({
+def _create_client() -> httpx.AsyncClient:
+    """Return an ``httpx.AsyncClient`` with browser-like headers."""
+    headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -36,8 +36,8 @@ def _create_session() -> requests.Session:
             "q=0.9,image/webp,*/*;q=0.8"
         ),
         "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7",
-    })
-    return session
+    }
+    return httpx.AsyncClient(headers=headers, timeout=15.0)
 
 
 # ──────────────────────────────────────────────
@@ -78,8 +78,8 @@ def _fix_image_url(url: str) -> str:
 # Single-product fetch
 # ──────────────────────────────────────────────
 
-def get_product_details(
-    session: requests.Session,
+async def get_product_details(
+    client: httpx.AsyncClient,
     product_id: str,
     retries: int = 3,
 ) -> dict:
@@ -94,14 +94,14 @@ def get_product_details(
 
     for attempt in range(1, retries + 1):
         try:
-            resp = session.get(url, timeout=15)
+            resp = await client.get(url)
 
             # ── Rate-limited ──
             if resp.status_code == 429:
                 wait = min(2 ** attempt + random.uniform(0, 1), 30)
                 print(f"  [429] Rate-limited on {product_id}. "
                       f"Retrying in {wait:.1f}s …")
-                time.sleep(wait)
+                await asyncio.sleep(wait)
                 continue
 
             # ── Non-200 ──
@@ -190,20 +190,20 @@ def get_product_details(
                 "discounted_price": discounted_price,
             }
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             print(f"  Timeout for {product_id} "
                   f"(attempt {attempt}/{retries})")
-            time.sleep(2 ** attempt)
+            await asyncio.sleep(2 ** attempt)
 
-        except requests.exceptions.ConnectionError:
+        except httpx.RequestError as exc:
             print(f"  Connection error for {product_id} "
-                  f"(attempt {attempt}/{retries})")
-            time.sleep(2 ** attempt)
+                  f"(attempt {attempt}/{retries}): {exc}")
+            await asyncio.sleep(2 ** attempt)
 
         except Exception as exc:
             print(f"  Unexpected error for {product_id} "
                   f"(attempt {attempt}/{retries}): {exc}")
-            time.sleep(1)
+            await asyncio.sleep(1)
 
     # Exhausted retries
     return {
@@ -217,8 +217,8 @@ def get_product_details(
 # Category ad (PLA / sponsored) fetch
 # ──────────────────────────────────────────────
 
-def get_category_ads(
-    session: requests.Session,
+async def get_category_ads(
+    client: httpx.AsyncClient,
     article_type: str,
     max_ads: int = 3,
 ) -> list[dict]:
@@ -238,7 +238,7 @@ def get_category_ads(
     url  = f"https://www.myntra.com/{slug}"
 
     try:
-        resp = session.get(url, timeout=15)
+        resp = await client.get(url)
         if resp.status_code != 200:
             print(f"  Category fetch [{resp.status_code}] for '{slug}'")
             return []
@@ -279,29 +279,16 @@ def get_category_ads(
 # Batch processing
 # ──────────────────────────────────────────────
 
-def process_products(
+async def process_products(
     product_ids: list[str],
     product_delay: tuple[float, float] = (0.3, 1.0),
     category_delay: tuple[float, float] = (0.5, 1.0),
-) -> dict:
+):
     """
-    Scrape a batch of Myntra products and their category ads.
-
-    Returns::
-
-        {
-            "products":      [ … ],
-            "category_ads":  { "Handbags": [ … ], … },
-            "summary": {
-                "total":        int,
-                "successful":   int,
-                "failed":       int,
-                "time_seconds": float,
-            },
-        }
+    Scrape a batch of Myntra products and their category ads as an async generator.
+    Yields dicts like {"type": "product", "data": {...}} or {"type": "ad", "data": {...}}
+    and finally {"type": "summary", "data": {...}}
     """
-    session  = _create_session()
-    products = []
     categories_seen: set[str] = set()
 
     total      = len(product_ids)
@@ -309,62 +296,52 @@ def process_products(
     failed     = 0
     t_start    = time.perf_counter()
 
-    # ── Fetch every product ──
-    for idx, pid in enumerate(product_ids, 1):
-        print(f"[{idx}/{total}] Fetching product {pid} …")
-        t0 = time.perf_counter()
+    async with _create_client() as client:
+        # ── Fetch every product ──
+        for idx, pid in enumerate(product_ids, 1):
+            print(f"[{idx}/{total}] Fetching product {pid} …")
+            t0 = time.perf_counter()
 
-        result = get_product_details(session, pid)
-        products.append(result)
+            result = await get_product_details(client, pid)
+            yield {"type": "product", "data": result}
 
-        if result.get("status") == "failed":
-            failed += 1
-            print(f"  FAILED in {time.perf_counter() - t0:.2f}s")
-        else:
-            successful += 1
-            print(f"  OK in {time.perf_counter() - t0:.2f}s")
+            if result.get("status") == "failed":
+                failed += 1
+                print(f"  FAILED in {time.perf_counter() - t0:.2f}s")
+            else:
+                successful += 1
+                print(f"  OK in {time.perf_counter() - t0:.2f}s")
 
-            # Collect unique articleType for category-ad lookup
-            cat = result.get("category", "")
-            if cat:
-                # articleType is the first segment before " > "
-                article = cat.split(" > ")[0].strip()
-                if article:
-                    categories_seen.add(article)
+                cat = result.get("category", "")
+                if cat:
+                    article = cat.split(" > ")[0].strip()
+                    if article:
+                        categories_seen.add(article)
 
-        # Random inter-request delay (skip after last)
-        if idx < total:
-            time.sleep(random.uniform(*product_delay))
+            if idx < total:
+                await asyncio.sleep(random.uniform(*product_delay))
 
-    # ── Fetch category ads for each unique articleType ──
-    category_ads: dict[str, list[dict]] = {}
-    cat_list = sorted(categories_seen)
+        # ── Fetch category ads for each unique articleType ──
+        cat_list = sorted(categories_seen)
 
-    for idx, cat in enumerate(cat_list, 1):
-        print(f"[Cat {idx}/{len(cat_list)}] Fetching ads for '{cat}' …")
-        ads = get_category_ads(session, cat)
-        category_ads[cat] = ads
-        print(f"  Found {len(ads)} sponsored product(s)")
+        for idx, cat in enumerate(cat_list, 1):
+            print(f"[Cat {idx}/{len(cat_list)}] Fetching ads for '{cat}' …")
+            ads = await get_category_ads(client, cat)
+            if ads:
+                yield {"type": "ad", "category": cat, "data": ads}
+            print(f"  Found {len(ads)} sponsored product(s)")
 
-        if idx < len(cat_list):
-            time.sleep(random.uniform(*category_delay))
+            if idx < len(cat_list):
+                await asyncio.sleep(random.uniform(*category_delay))
 
     elapsed = round(time.perf_counter() - t_start, 2)
 
     # ── Summary ──
-    print("\n" + "=" * 60)
-    print(f"Products   : {successful}/{total} successful")
-    print(f"Categories : {len(cat_list)} scanned")
-    print(f"Total time : {elapsed}s")
-
-    return {
-        "products": products,
-        "category_ads": category_ads,
-        "summary": {
-            "total":        total,
-            "successful":   successful,
-            "failed":       failed,
-            "categories":   len(cat_list),
-            "time_seconds": elapsed,
-        },
+    summary = {
+        "total":        total,
+        "successful":   successful,
+        "failed":       failed,
+        "categories":   len(cat_list),
+        "time_seconds": elapsed,
     }
+    yield {"type": "summary", "data": summary}

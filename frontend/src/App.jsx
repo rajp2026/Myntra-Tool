@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { UploadCloud, CheckCircle, XCircle, AlertCircle, Package } from 'lucide-react';
 import './index.css';
 
-const API_URL = 'http://localhost:8000/upload';
+const API_URL = 'http://localhost:8000';
 
 function App() {
   const [file, setFile] = useState(null);
@@ -11,11 +11,57 @@ function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    axios.get(`${API_URL}/history/latest`).then(res => {
+      if (res.data && res.data.job_id) {
+        setData(res.data);
+      }
+    }).catch(err => console.log('No history found'));
+  }, []);
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       setError('');
     }
+  };
+
+  const startWebSocket = (jobId) => {
+    const ws = new WebSocket(`ws://localhost:8000/ws/scrape/${jobId}`);
+    
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      
+      setData(prev => {
+        const newData = {
+          products: prev?.products ? [...prev.products] : [],
+          category_ads: prev?.category_ads ? { ...prev.category_ads } : {},
+          summary: prev?.summary ? { ...prev.summary } : { total: 0, successful: 0, failed: 0 }
+        };
+        
+        if (msg.type === 'product') {
+          newData.products.push(msg.data);
+          if (msg.data.status === 'success') newData.summary.successful++;
+          else newData.summary.failed++;
+          newData.summary.total++;
+        } else if (msg.type === 'ad') {
+          newData.category_ads[msg.category] = msg.data;
+        } else if (msg.type === 'summary') {
+          newData.summary = msg.data;
+        }
+        
+        return newData;
+      });
+    };
+    
+    ws.onclose = () => {
+      setLoading(false);
+    };
+    
+    ws.onerror = (err) => {
+      setError('WebSocket error occurred');
+      setLoading(false);
+    };
   };
 
   const handleUpload = async () => {
@@ -26,17 +72,18 @@ function App() {
 
     setLoading(true);
     setError('');
+    setData({ products: [], category_ads: {}, summary: { total: 0, successful: 0, failed: 0 } });
+    
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const response = await axios.post(API_URL, formData, {
+      const response = await axios.post(`${API_URL}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setData(response.data);
+      startWebSocket(response.data.job_id);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'An error occurred during upload.');
-    } finally {
       setLoading(false);
     }
   };
@@ -48,6 +95,17 @@ function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'sample_products.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadJSON = () => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `myntra_scrape_${data.job_id || 'results'}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -84,7 +142,7 @@ function App() {
         </div>
       )}
 
-      {loading && (
+      {!data && loading && (
         <div style={{textAlign: 'center', padding: '4rem'}}>
           <div style={{
             display: 'inline-block', width: '40px', height: '40px', 
@@ -92,12 +150,12 @@ function App() {
             borderRadius: '50%', animation: 'spin 1s linear infinite'
           }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          <h2>Scraping Data...</h2>
-          <p style={{color: 'var(--text-secondary)'}}>This might take a moment.</p>
+          <h2>Connecting...</h2>
+          <p style={{color: 'var(--text-secondary)'}}>Preparing to scrape data.</p>
         </div>
       )}
 
-      {data && !loading && (
+      {data && (
         <div>
           <div className="summary">
             <div className="summary-item">
@@ -112,38 +170,56 @@ function App() {
               <div className="summary-val" style={{color: 'var(--accent-coral)'}}>{data.summary?.failed || 0}</div>
               <div className="summary-label">Failed</div>
             </div>
-            <div className="summary-item" style={{marginLeft: 'auto'}}>
+            <div className="summary-item" style={{marginLeft: 'auto', display: 'flex', gap: '1rem'}}>
+              <button className="upload-btn" onClick={downloadJSON}>Download JSON</button>
               <button className="upload-btn" onClick={() => { setData(null); setFile(null); }}>Scrape Another</button>
             </div>
           </div>
 
           <h2 style={{marginTop: '2rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-            <Package color="var(--accent-teal)" /> Scraped Products
+            <Package color="var(--accent-teal)" /> Scraped Products 
+            {loading && <span style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginLeft: '1rem', fontStyle: 'italic'}}>Scraping in progress...</span>}
           </h2>
-          <div className="products-grid">
-            {data.products?.map((p, i) => (
-              <div className="card" key={i}>
-                {p.images?.length > 0 && (
-                  <div className="card-images">
-                    {p.images.slice(0, 2).map((img, j) => <img src={img} key={j} alt="Product" />)}
-                  </div>
-                )}
-                <div className="card-body">
-                  <div className="brand">{p.brand}</div>
-                  <h3 className="title">{p.title || 'Unknown Product'}</h3>
-                  <div className="category">{p.category}</div>
-                  {p.rating && (
-                    <div className="rating">
-                      <CheckCircle size={16} /> {p.rating.toFixed(1)} ({p.ratings_count})
-                    </div>
-                  )}
-                  <div className="price">
-                    {p.discounted_price && <span className="price-current">₹{p.discounted_price}</span>}
-                    {p.mrp && p.mrp !== p.discounted_price && <span className="price-mrp">₹{p.mrp}</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Brand</th>
+                  <th>Title</th>
+                  <th>Category</th>
+                  <th>Price</th>
+                  <th>Rating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.products?.map((p, i) => (
+                  <tr key={i}>
+                    <td>
+                      {p.images?.length > 0 ? (
+                        <img src={p.images[0]} className="table-img" alt="Product" />
+                      ) : (
+                        <div className="table-img" style={{background: '#333'}}></div>
+                      )}
+                    </td>
+                    <td className="brand" style={{marginBottom: 0}}>{p.brand}</td>
+                    <td>{p.title || 'Unknown Product'}</td>
+                    <td className="category" style={{marginBottom: 0}}>{p.category}</td>
+                    <td>
+                      {p.discounted_price && <div className="price-current">₹{p.discounted_price}</div>}
+                      {p.mrp && p.mrp !== p.discounted_price && <div className="price-mrp">₹{p.mrp}</div>}
+                    </td>
+                    <td>
+                      {p.rating && (
+                        <div className="rating" style={{marginBottom: 0}}>
+                          <CheckCircle size={16} /> {p.rating.toFixed(1)} ({p.ratings_count})
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {Object.keys(data.category_ads || {}).length > 0 && (
@@ -152,17 +228,29 @@ function App() {
               {Object.entries(data.category_ads).map(([cat, ads]) => (
                 <div key={cat} style={{marginBottom: '2rem'}}>
                   <h3 style={{color: 'var(--accent-teal)'}}>{cat}</h3>
-                  <div className="products-grid" style={{marginTop: '1rem'}}>
-                    {ads.map((ad, i) => (
-                      <div className="card" key={i} style={{display: 'flex', height: '120px'}}>
-                        <img src={ad.image} alt="Ad" style={{width: '100px', objectFit: 'cover'}} />
-                        <div className="card-body" style={{padding: '1rem', flex: 1}}>
-                          <div className="brand">{ad.brand}</div>
-                          <div style={{fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{ad.name}</div>
-                          <div style={{marginTop: '0.5rem', fontWeight: 'bold'}}>₹{ad.price}</div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="table-container" style={{marginTop: '1rem'}}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Image</th>
+                          <th>Brand</th>
+                          <th>Name</th>
+                          <th>Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ads.map((ad, i) => (
+                          <tr key={i}>
+                            <td>
+                              <img src={ad.image} className="table-img" alt="Ad" />
+                            </td>
+                            <td className="brand" style={{marginBottom: 0}}>{ad.brand}</td>
+                            <td>{ad.name}</td>
+                            <td><div className="price-current">₹{ad.price}</div></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               ))}

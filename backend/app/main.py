@@ -7,6 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.api.routes import router
 import os
+from app.db.database import engine
+from app.db.models import Base
+
+# Create DB tables
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Myntra Product Tool")
 
