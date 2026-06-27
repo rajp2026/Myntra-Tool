@@ -10,6 +10,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [expandedRows, setExpandedRows] = useState(new Set());
 
   useEffect(() => {
     axios.get(`${API_URL}/history/latest`).then(res => {
@@ -110,6 +111,15 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const toggleRow = (index) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) newSet.delete(index);
+      else newSet.add(index);
+      return newSet;
+    });
+  };
+
   return (
     <div className="app-container">
       <header>
@@ -194,68 +204,79 @@ function App() {
               </thead>
               <tbody>
                 {data.products?.map((p, i) => (
-                  <tr key={i}>
-                    <td>
-                      {p.images?.length > 0 ? (
-                        <img src={p.images[0]} className="table-img" alt="Product" />
-                      ) : (
-                        <div className="table-img" style={{background: '#333'}}></div>
-                      )}
-                    </td>
-                    <td className="brand" style={{marginBottom: 0}}>{p.brand}</td>
-                    <td>{p.title || 'Unknown Product'}</td>
-                    <td className="category" style={{marginBottom: 0}}>{p.category}</td>
-                    <td>
-                      {p.discounted_price && <div className="price-current">₹{p.discounted_price}</div>}
-                      {p.mrp && p.mrp !== p.discounted_price && <div className="price-mrp">₹{p.mrp}</div>}
-                    </td>
-                    <td>
-                      {p.rating && (
-                        <div className="rating" style={{marginBottom: 0}}>
-                          <CheckCircle size={16} /> {p.rating.toFixed(1)} ({p.ratings_count})
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={i}>
+                    <tr onClick={() => toggleRow(i)} style={{cursor: 'pointer', background: expandedRows.has(i) ? 'rgba(78,205,196,0.05)' : ''}}>
+                      <td>
+                        {p.images?.length > 0 ? (
+                          <img src={p.images[0]} className="table-img" alt="Product" />
+                        ) : (
+                          <div className="table-img" style={{background: '#333'}}></div>
+                        )}
+                      </td>
+                      <td className="brand" style={{marginBottom: 0}}>{p.brand}</td>
+                      <td>{p.title || 'Unknown Product'}</td>
+                      <td className="category" style={{marginBottom: 0}}>{p.category}</td>
+                      <td>
+                        {p.discounted_price && <div className="price-current">₹{p.discounted_price}</div>}
+                        {p.mrp && p.mrp !== p.discounted_price && <div className="price-mrp">₹{p.mrp}</div>}
+                      </td>
+                      <td>
+                        {p.rating && (
+                          <div className="rating" style={{marginBottom: 0}}>
+                            <CheckCircle size={16} /> {p.rating.toFixed(1)} ({p.ratings_count})
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedRows.has(i) && (
+                      <tr style={{background: 'rgba(78,205,196,0.05)'}}>
+                        <td colSpan="6" style={{padding: '1.5rem', borderTop: 'none'}}>
+                          <div style={{display: 'flex', gap: '2rem', flexWrap: 'wrap'}}>
+                            
+                            {/* Product Images Row */}
+                            <div style={{display: 'flex', flexDirection: 'row', gap: '1rem'}}>
+                              {p.images?.map((imgUrl, imgIdx) => (
+                                <img key={imgIdx} src={imgUrl} style={{width: '90px', height: '120px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)'}} alt={`Product view ${imgIdx + 1}`} />
+                              ))}
+                            </div>
+
+                            {/* Product Info Column */}
+                            <div style={{flex: '1 1 300px'}}>
+                              <div style={{color: 'var(--accent-teal)', fontSize: '0.85rem', marginBottom: '0.25rem', letterSpacing: '1px'}}>PRODUCT ID: {p.product_id}</div>
+                              <h4 style={{marginBottom: '0.5rem', fontSize: '1.1rem'}}>{p.title}</h4>
+                              <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.4', maxWidth: '600px', margin: 0}}>{p.description || 'No description available for this product.'}</p>
+                            </div>
+                            
+                            {/* Render Sponsored Products for this category if available */}
+                            {p.category && data.category_ads && data.category_ads[p.category.split(' > ')[0].trim()] && data.category_ads[p.category.split(' > ')[0].trim()].length > 0 && (
+                              <div style={{flex: '1 1 300px', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(78,205,196,0.1)'}}>
+                                <h5 style={{color: 'var(--accent-coral)', margin: '0 0 0.5rem 0'}}>
+                                  Sponsored ({p.category.split(' > ')[0].trim()})
+                                </h5>
+                                <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                                  {data.category_ads[p.category.split(' > ')[0].trim()].map((ad, idx) => (
+                                    <div key={idx} style={{display: 'flex', gap: '0.75rem', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '6px'}}>
+                                      <img src={ad.image} style={{width: '40px', height: '55px', objectFit: 'cover', borderRadius: '4px'}} alt="Ad" />
+                                      <div>
+                                        <div className="brand" style={{fontSize: '0.75rem', marginBottom: '0.1rem'}}>{ad.brand}</div>
+                                        <div style={{fontSize: '0.8rem', lineHeight: '1.2', marginBottom: '0.2rem', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden'}}>{ad.name}</div>
+                                        <div className="price-current" style={{fontSize: '0.85rem'}}>₹{ad.price}</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {Object.keys(data.category_ads || {}).length > 0 && (
-            <div style={{marginTop: '4rem'}}>
-              <h2 style={{marginBottom: '1rem'}}>Sponsored Category Ads</h2>
-              {Object.entries(data.category_ads).map(([cat, ads]) => (
-                <div key={cat} style={{marginBottom: '2rem'}}>
-                  <h3 style={{color: 'var(--accent-teal)'}}>{cat}</h3>
-                  <div className="table-container" style={{marginTop: '1rem'}}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Image</th>
-                          <th>Brand</th>
-                          <th>Name</th>
-                          <th>Price</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ads.map((ad, i) => (
-                          <tr key={i}>
-                            <td>
-                              <img src={ad.image} className="table-img" alt="Ad" />
-                            </td>
-                            <td className="brand" style={{marginBottom: 0}}>{ad.brand}</td>
-                            <td>{ad.name}</td>
-                            <td><div className="price-current">₹{ad.price}</div></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
